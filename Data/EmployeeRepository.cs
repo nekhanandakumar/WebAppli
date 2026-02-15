@@ -32,17 +32,24 @@ namespace EmployeeManagementAPI.Data
                 {
                     if (await reader.ReadAsync())
                     {
-                        return new LoginResponse
+                        var response = new LoginResponse
                         {
                             EmployeeID = reader.GetInt32(reader.GetOrdinal("EmployeeID")),
                             Name = reader.GetString(reader.GetOrdinal("Name")),
                             Username = reader.GetString(reader.GetOrdinal("Username")),
                             Role = reader.GetString(reader.GetOrdinal("Role")),
-                            Status = reader.GetString(reader.GetOrdinal("Status")),
-                            ProfileImage = reader.IsDBNull(reader.GetOrdinal("ProfileImage"))
-                                ? null
-                                : reader.GetString(reader.GetOrdinal("ProfileImage"))
+                            Status = reader.GetString(reader.GetOrdinal("Status"))
                         };
+
+                        // ✅ BLOB TO BASE64 CONVERSION
+                        int imgOrd = reader.GetOrdinal("ProfileImage");
+                        if (!reader.IsDBNull(imgOrd))
+                        {
+                            byte[] imageBytes = (byte[])reader.GetValue(imgOrd);
+                            response.ProfileImage = Convert.ToBase64String(imageBytes);
+                        }
+
+                        return response;
                     }
                 }
             }
@@ -136,35 +143,47 @@ namespace EmployeeManagementAPI.Data
             }
         }
 
-        public async Task UpdateProfileImage(int id, string imagePath)
+        public async Task UpdateProfileImage(int id, byte[] imageBytes) // Note the byte[] parameter
         {
             using (SqlConnection conn = new SqlConnection(_connectionString))
-            using (SqlCommand cmd = new SqlCommand("UPDATE Employees SET ProfileImage = @ProfileImage WHERE EmployeeID = @EmployeeID", conn))
+            using (SqlCommand cmd = new SqlCommand("sp_UpdateProfileImage", conn))
             {
-                cmd.CommandType = CommandType.Text;
-
-                cmd.Parameters.AddWithValue("@ProfileImage", imagePath ?? (object)DBNull.Value);
+                cmd.CommandType = CommandType.StoredProcedure;
                 cmd.Parameters.AddWithValue("@EmployeeID", id);
+                cmd.Parameters.AddWithValue("@ProfileImage", imageBytes ?? (object)DBNull.Value);
 
                 await conn.OpenAsync();
                 await cmd.ExecuteNonQueryAsync();
             }
         }
+        public async Task<bool> ToggleEmployeeStatus(int id, string newStatus)
+        {
+            using (SqlConnection conn = new SqlConnection(_connectionString))
+            using (SqlCommand cmd = new SqlCommand("sp_ToggleEmployeeStatus", conn))
+            {
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@EmployeeID", id);
+                cmd.Parameters.AddWithValue("@Status", newStatus);
 
-
+                await conn.OpenAsync();
+                int rows = await cmd.ExecuteNonQueryAsync();
+                return rows > 0;
+            }
+        }
 
         private Employee MapEmployeeFromReader(SqlDataReader reader)
         {
             var emp = new Employee();
 
+            emp.EmployeeID = reader.GetInt32(reader.GetOrdinal("EmployeeID"));
+            emp.Name = reader.GetString(reader.GetOrdinal("Name"));
+            emp.Username = reader.GetString(reader.GetOrdinal("Username"));
+            emp.Password = reader.GetString(reader.GetOrdinal("Password"));
+            emp.Status = reader.GetString(reader.GetOrdinal("Status"));
+            emp.Role = reader.GetString(reader.GetOrdinal("Role"));
+
+            // Safely map nullable fields
             int ord;
-
-            ord = reader.GetOrdinal("EmployeeID");
-            emp.EmployeeID = reader.IsDBNull(ord) ? 0 : reader.GetInt32(ord);
-
-            ord = reader.GetOrdinal("Name");
-            emp.Name = reader.IsDBNull(ord) ? string.Empty : reader.GetString(ord);
-
             ord = reader.GetOrdinal("Designation");
             emp.Designation = reader.IsDBNull(ord) ? null : reader.GetString(ord);
 
@@ -180,18 +199,6 @@ namespace EmployeeManagementAPI.Data
             ord = reader.GetOrdinal("Skillset");
             emp.Skillset = reader.IsDBNull(ord) ? null : reader.GetString(ord);
 
-            ord = reader.GetOrdinal("Username");
-            emp.Username = reader.IsDBNull(ord) ? string.Empty : reader.GetString(ord);
-
-            ord = reader.GetOrdinal("Password");
-            emp.Password = reader.IsDBNull(ord) ? string.Empty : reader.GetString(ord);
-
-            ord = reader.GetOrdinal("Status");
-            emp.Status = reader.IsDBNull(ord) ? string.Empty : reader.GetString(ord);
-
-            ord = reader.GetOrdinal("Role");
-            emp.Role = reader.IsDBNull(ord) ? string.Empty : reader.GetString(ord);
-
             ord = reader.GetOrdinal("CreatedBy");
             emp.CreatedBy = reader.IsDBNull(ord) ? null : reader.GetString(ord);
 
@@ -204,10 +211,26 @@ namespace EmployeeManagementAPI.Data
             ord = reader.GetOrdinal("ModifiedAt");
             emp.ModifiedAt = reader.IsDBNull(ord) ? null : reader.GetDateTime(ord);
 
-            emp.ProfileImage = reader.IsDBNull(reader.GetOrdinal("ProfileImage"))
-    ? null
-    : reader.GetString(reader.GetOrdinal("ProfileImage"));
+            // ✅ SAFELY HANDLE BLOB IMAGE AND MISSING COLUMNS
+            bool hasProfileImageColumn = false;
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (reader.GetName(i).Equals("ProfileImage", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasProfileImageColumn = true;
+                    break;
+                }
+            }
 
+            if (hasProfileImageColumn)
+            {
+                int imgOrd = reader.GetOrdinal("ProfileImage");
+                if (!reader.IsDBNull(imgOrd))
+                {
+                    byte[] imageBytes = (byte[])reader.GetValue(imgOrd);
+                    emp.ProfileImage = Convert.ToBase64String(imageBytes);
+                }
+            }
 
             return emp;
         }

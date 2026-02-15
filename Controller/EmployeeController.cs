@@ -140,31 +140,41 @@ namespace EmployeeManagementAPI.Controllers
 
 
         [HttpPost("upload-image/{id}")]
+       
         public async Task<IActionResult> UploadImage(int id, IFormFile file)
         {
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded");
 
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "Uploads");
+            byte[] imageBytes;
 
-            if (!Directory.Exists(uploadsFolder))
-                Directory.CreateDirectory(uploadsFolder);
-
-            var fileName = Guid.NewGuid().ToString() + Path.GetExtension(file.FileName);
-            var filePath = Path.Combine(uploadsFolder, fileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
+            using (var ms = new MemoryStream())
             {
-                await file.CopyToAsync(stream);
+                await file.CopyToAsync(ms);
+                imageBytes = ms.ToArray();
             }
 
-            var imagePath = "Uploads/" + fileName;
+            await _repository.UpdateProfileImage(id, imageBytes);
 
-            await _repository.UpdateProfileImage(id, imagePath);
-
-            return Ok(new { imagePath });
+            return Ok("Image saved to database");
         }
 
+        [HttpPatch("ToggleStatus/{id}")]
+        public async Task<IActionResult> ToggleStatus(int id, [FromBody] string status)
+        {
+            if (string.IsNullOrEmpty(status))
+            {
+                return BadRequest("Status cannot be empty.");
+            }
+
+            var success = await _repository.ToggleEmployeeStatus(id, status);
+            if (success)
+            {
+                return Ok(new { Message = $"Employee status updated to {status} successfully." });
+            }
+
+            return NotFound("Employee not found.");
+        }
 
         private bool IsAdmin()
         {
