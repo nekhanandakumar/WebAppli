@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Data.SqlClient;
 using EmployeeManagementAPI.Models;
+using Microsoft.AspNetCore.Identity;
+
+
 
 namespace EmployeeManagementAPI.Data
 {
@@ -24,7 +27,6 @@ namespace EmployeeManagementAPI.Data
             {
                 cmd.CommandType = CommandType.StoredProcedure;
                 cmd.Parameters.AddWithValue("@Username", username);
-                cmd.Parameters.AddWithValue("@Password", password);
 
                 await conn.OpenAsync();
 
@@ -32,6 +34,19 @@ namespace EmployeeManagementAPI.Data
                 {
                     if (await reader.ReadAsync())
                     {
+                        string storedHash = reader.GetString(reader.GetOrdinal("Password"));
+
+                        var hasher = new PasswordHasher<Employee>();
+
+                        var verifyResult = hasher.VerifyHashedPassword(
+                            new Employee(),
+                            storedHash,
+                            password
+                        );
+
+                        if (verifyResult == PasswordVerificationResult.Failed)
+                            return null;
+
                         var response = new LoginResponse
                         {
                             EmployeeID = reader.GetInt32(reader.GetOrdinal("EmployeeID")),
@@ -41,7 +56,6 @@ namespace EmployeeManagementAPI.Data
                             Status = reader.GetString(reader.GetOrdinal("Status"))
                         };
 
-                        // ✅ BLOB TO BASE64 CONVERSION
                         int imgOrd = reader.GetOrdinal("ProfileImage");
                         if (!reader.IsDBNull(imgOrd))
                         {
@@ -53,8 +67,10 @@ namespace EmployeeManagementAPI.Data
                     }
                 }
             }
+
             return null;
         }
+
 
 
         public async Task<int> RegisterEmployee(Employee employee)
@@ -70,7 +86,11 @@ namespace EmployeeManagementAPI.Data
                 cmd.Parameters.AddWithValue("@JoiningDate", employee.JoiningDate ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@Skillset", employee.Skillset ?? (object)DBNull.Value);
                 cmd.Parameters.AddWithValue("@Username", employee.Username);
+                var hasher = new PasswordHasher<Employee>();
+                employee.Password = hasher.HashPassword(employee, employee.Password);
+
                 cmd.Parameters.AddWithValue("@Password", employee.Password);
+
                 cmd.Parameters.AddWithValue("@CreatedBy", employee.CreatedBy ?? "Self");
 
                 await conn.OpenAsync();
