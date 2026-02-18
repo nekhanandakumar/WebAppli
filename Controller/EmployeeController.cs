@@ -1,8 +1,10 @@
-﻿using System;
-using EmployeeManagementAPI.Data;
+﻿using EmployeeManagementAPI.Data;
 using EmployeeManagementAPI.Models;
+using EmployeeManagementAPI.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using System;
 
 
 namespace EmployeeManagementAPI.Controllers
@@ -12,13 +14,17 @@ namespace EmployeeManagementAPI.Controllers
     public class EmployeeController : ControllerBase
     {
         private readonly EmployeeRepository _repository;
+        private readonly JwtTokenService _jwtTokenService;
 
-        public EmployeeController(EmployeeRepository repository)
+        public EmployeeController(EmployeeRepository repository, JwtTokenService jwtTokenService)
         {
             _repository = repository;
+            _jwtTokenService = jwtTokenService;
         }
 
+
         // 🔹 LOGIN
+        [AllowAnonymous]
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
@@ -42,12 +48,18 @@ namespace EmployeeManagementAPI.Controllers
             {
                 return Unauthorized(new { message = "Your account is inactive. Please contact admin." });
             }
+            var token = _jwtTokenService.GenerateToken(result);
 
-            // ✅ If everything is correct
-            return Ok(result);
+            return Ok(new
+            {
+                token = token,
+                user = result
+            });
+
         }
 
         // 🔹 REGISTER
+        [AllowAnonymous]
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] Employee employee)
         {
@@ -74,9 +86,10 @@ namespace EmployeeManagementAPI.Controllers
             }
         }
 
-        
+
 
         // 🔹 GET EMPLOYEE BY ID
+        [Authorize]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetEmployee(int id)
         {
@@ -89,6 +102,7 @@ namespace EmployeeManagementAPI.Controllers
         }
 
         // 🔹 GET ALL EMPLOYEES
+        [Authorize]
         [HttpGet]
         public async Task<IActionResult> GetAllEmployees()
         {
@@ -97,6 +111,7 @@ namespace EmployeeManagementAPI.Controllers
         }
 
         // 🔹 UPDATE EMPLOYEE (INCLUDING STATUS)
+        [Authorize]
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateEmployee(
     int id,
@@ -158,7 +173,7 @@ namespace EmployeeManagementAPI.Controllers
 
             return Ok("Image saved to database");
         }
-
+        [Authorize(Roles = "Admin")]
         [HttpPatch("ToggleStatus/{id}")]
         public async Task<IActionResult> ToggleStatus(int id, [FromBody] string status)
         {
