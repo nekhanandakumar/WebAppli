@@ -155,7 +155,7 @@ namespace EmployeeManagementAPI.Controllers
 
 
         [HttpPost("upload-image/{id}")]
-       
+
         public async Task<IActionResult> UploadImage(int id, IFormFile file)
         {
             if (file == null || file.Length == 0)
